@@ -4,7 +4,9 @@ import collections
 
 def morphology_filter(img_):
     gray = cv2.cvtColor(img_, cv2.COLOR_RGB2GRAY)
+    # Saturation channel
     hls_s = cv2.cvtColor(img_, cv2.COLOR_RGB2HLS)[:, :, 2]
+    # copied from github, works like a charm
     src = 0.3*hls_s + 0.7*gray
     src = np.array(src-np.min(src)/(np.max(src)-np.min(src))).astype('float32')
     blurf = np.zeros((1, 5))
@@ -13,108 +15,40 @@ def morphology_filter(img_):
     f = np.zeros((1, 30))
     f.fill(1)
     l = cv2.morphologyEx(src, cv2.MORPH_OPEN, f)
+    # l is our src image with an opening morphological transformation applied to it. Anything smaller than some value in kernel will be removed. This means smaller abnormalities like lane lines are removed, and nautral gradients like shadows are not. Subtracting them yields the removed items. This is the top hat morphological transformation.
     filtered = src - l
-
-    return filtered
-
-def img_threshold(img_):
-
-    # Use HLS, LAB Channels for Thresholding #
-    thresh_l = (150, 255)
-    hls = img_.astype(np.float)
-    L = hls[:, :, 2]
-    S = hls[:, :, 1]
-    color_binary = np.zeros_like(L)
-    color_binary[(L > thresh_l[0]) & (L <= thresh_l[1]) & (S > thresh_l[0]-20) & (S <= thresh_l[1])] = 1
-    color_binary = color_binary.astype(np.float32)
-
-
+    # 6x6 kernel
     small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6))
 
-
-    # Morphology Channel Thresholding
-    morph_channel = morphology_filter(img_)
-    morph_thresh_lower = 1.1*np.mean(morph_channel) + .7*np.std(morph_channel)
-    morph_thresh_upper = np.max(morph_channel)
-    morph_binary = np.zeros_like(morph_channel)
-    morph_binary[(morph_channel >= morph_thresh_lower) &
-                 (morph_channel <= morph_thresh_upper)] = 1
-
-    # Erosion Kernel to clear out small granular noises
+    morph_thresh_lower = 1.1*np.mean(filtered) + .7*np.std(filtered)
+    morph_binary = np.zeros_like(filtered)
+    morph_binary[(filtered >= morph_thresh_lower)] = 1
+    # Remove noise with 6x6 kernel
     morph_binary = cv2.morphologyEx(morph_binary, cv2.MORPH_OPEN, small_kernel)
     morph_binary=morph_binary.astype(np.float32)
+
+    return morph_binary
+def img_threshold(img_):
+
+    # Use HLS Channels for color Thresholding 
+    thresh_l = (150, 255)
+    hls = img_.astype(np.float)
+    # Lightness channel
+    L = hls[:, :, 2]
+    # Saturation channel
+    S = hls[:, :, 1]
+    color_binary = np.zeros_like(L)
+    # Saturation threshold has lower bound than lightness threshold
+    color_binary[(L > thresh_l[0]) & (L <= thresh_l[1]) & (S > thresh_l[0]-20) & (S <= thresh_l[1])] = 1
+    color_binary = color_binary.astype(np.float32)
+    
+    # Combine thresholds
+    morph_binary = morphology_filter(img_)
     img_out = cv2.bitwise_and(morph_binary, color_binary)
 
     return img_out.astype(np.float32)
 
-
-def abs_sobel_thresh(image, orient='x', sobel_kernel=3, thresh=(50, 100)):
-    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    isX = True if orient == 'x' else False
-    sobel = cv2.Sobel(gray, cv2.CV_64F, isX, not isX, ksize = sobel_kernel)
-    abs_sobel = np.absolute(sobel)
-    scaled_sobel = np.uint8(255*abs_sobel/np.max(abs_sobel))
-    grad_binary = np.zeros_like(scaled_sobel)
-    grad_binary[(scaled_sobel >= thresh[0]) & (scaled_sobel <= thresh[1])] = 255
-
-    return grad_binary
-def mag_thresh(image, sobel_kernel=3, mag_thresh=(0, 255)):
-    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
-    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
-    abs_sobel = np.sqrt(sobelx**2 + sobely**2)
-    scaled_sobel = np.uint8(255*abs_sobel/np.max(abs_sobel))
-    mag_binary = np.zeros_like(scaled_sobel)
-    mag_binary[(scaled_sobel >= mag_thresh[0]) & (scaled_sobel <= mag_thresh[1])] = 1
-
-    return mag_binary
-def dir_threshold(image, sobel_kernel=3, thresh=(0, np.pi/2)):
-    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
-    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
-    abs_sobelx = np.absolute(sobelx)
-    abs_sobely = np.absolute(sobely)
-    grad_dir = np.arctan2(abs_sobely, abs_sobelx)
-    dir_binary = np.zeros_like(grad_dir)
-    dir_binary[(grad_dir >= thresh[0]) & (grad_dir <= thresh[1])] = 1
-
-    return dir_binary
-def apply_thresholds(image, ksize=3):
-    gradx = abs_sobel_thresh(image, orient='x', sobel_kernel=ksize, thresh=(20, 100))
-    grady = abs_sobel_thresh(image, orient='y', sobel_kernel=ksize, thresh=(20, 100))
-    mag_binary = mag_thresh(image, sobel_kernel=ksize, mag_thresh=(30, 100))
-    dir_binary = dir_threshold(image, sobel_kernel=ksize, thresh=(0.7, 1.3))
-
-    combined = np.zeros_like(dir_binary)
-    combined[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1))] = 1
-
-    return combined
-def apply_color_threshold(image):
-#    global thresh_s
-#    global thresh_l
-    thresh_s = (150, 255)
-    thresh_l = (150, 255)
-#    hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)
-    hls = image.astype(np.float)
-    L = hls[:, :, 1]
-    S = hls[:, :, 2]
-    channel_S = np.zeros_like(S)
-    channel_S[(S > thresh_s[0]) & (S <= thresh_s[1])] = 1
-    channel_L = np.zeros_like(S)
-    channel_L[(S > thresh_l[0]) & (S <= thresh_l[1])] = 1
-    binary = np.maximum(channel_L,channel_S)
-
-    return binary
-def combine_threshold(img, thresh1, thresh2):
-    combined_binary = np.zeros_like(thresh1(img))
-    combined_binary[(thresh1(img) == 1) | (thresh2(img) == 1)] = 1
-
-    return combined_binary
-
-
 imshape=(1920//2, 1080//2)
-
-
 roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32)
 pts=np.float32([[375,350],[575,350],[50,530],[900,530]])
 pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
@@ -383,14 +317,12 @@ def process_frame(img):
     # Resizing & Copy
     img=cv2.resize(img, imshape)
     img_original = np.copy(img)
+
     # Bird's eye view
     warped, Minv = warp(img)
 
-    # Blur and convert to binary image using color threshold
-#    blur = cv2.GaussianBlur(warped, (5,5), 0)
-    thresh = img_threshold(warped)
-#    print(thresh.sum())
-    #thresh[thresh == 2] = 1
+    # Threshold
+    thresh = morphology_filter(warped)
 
     # Scan for lane lines using a margin search, otherwise use a sliding window search
     if left_line.detected and right_line.detected:
@@ -402,27 +334,8 @@ def process_frame(img):
         validate_lane_update(thresh, left_lane_inds, right_lane_inds)
 
     final = draw_lane(img_original, thresh, Minv)
-    result = assemble_img(warped, thresh, output, final)
+    result = assemble_img(warped, morphology_filter(warped), output, final)
 
-    # Mask
-#    mask = np.zeros_like(img_original)
-#    cv2.fillPoly(mask, [roi_vertices], (1,1,1))
-
-#    print(right_line.current_fit[0])
-#    print(right_line.points)
-#    print(right_line.points_last)
-
-#    else:
-#        pass
-
-#    cv2.imshow('image', img)
-
-#    if right_line.points is not None:
-#        right_line.points_last, left_line.points_last = right_line.points, left_line.points
-
-
-#    cv2.waitKey(0)
-#    cv2.destroyAllWindows()
     return result
 
 class Line():
@@ -458,18 +371,53 @@ class Line():
         # Use the queue mean as the best fit
         self.best_fit = np.mean(self.recent_xfitted, axis=0)
 
+
+# if __name__ == "__main__":
+#   cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
+#   left_line = Line()
+#   right_line = Line()
+#   writer = None
+#   while cap.isOpened():
+#     ret, frame = cap.read()
+#     if not ret:
+#         print ("Not grabbed.")
+#         break
+        
+#     # Run detection
+#     if right_line.points is not None:
+#         right_line.points_last, left_line.points_last = right_line.points, left_line.points
+#     result = process_frame(frame)
+#     cv2.imshow('image', result)
+#     cv2.waitKey(0)
+#     cv2.destroyAllWindows()
+
+
 if __name__ == "__main__":
-  cap = cv2.VideoCapture('/Users/pcuser/SelfDrivingCar/copied3/Advanced-lane-finding-master/challenge_video.mp4')
+  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
   left_line = Line()
   right_line = Line()
-  out = cv2.VideoWriter('/Users/pcuser/SelfDrivingCar/output.avi',cv2.VideoWriter_fourcc('M','J','P','G'), 10, imshape)
-
+  writer = None
   while cap.isOpened():
     ret, frame = cap.read()
-    if ret == True:
-        img = process_frame(frame)
-        out.write(img)
-    else:
-        cap.release()
-        out.release()
+    if not ret:
+        print ("Not grabbed.")
         break
+        
+    # Run detection
+    if right_line.points is not None:
+        right_line.points_last, left_line.points_last = right_line.points, left_line.points
+    result = process_frame(frame)
+    results = result.astype(np.uint8)
+    if writer is None:
+        # Initialize our video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/obstacle_output.mp4', 0x7634706d, 30,
+        (results.shape[1], results.shape[0]))
+    
+    # Write the output frame to disk
+    writer.write(results)
+        
+# Release the file pointers
+print("[INFO] cleaning up...")
+cap.release()
+writer.release()
