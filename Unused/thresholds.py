@@ -44,19 +44,17 @@ def apply_thresholds(image, ksize=3):
     return combined
 
 def apply_color_threshold(image):
-#    global thresh_s
-#    global thresh_l
     thresh_s = (150, 255)
     thresh_l = (150, 255)
-#    hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)
+    hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)
     hls = image.astype(np.float)
     L = hls[:, :, 1]
-    S = hls[:, :, 2]
-    channel_S = np.zeros_like(S)
-    channel_S[(S > thresh_s[0]) & (S <= thresh_s[1])] = 1
-    channel_L = np.zeros_like(S)
+    #S = hls[:, :, 2]
+    #channel_S = np.zeros_like(S)
+    #channel_S[(S > thresh_s[0]) & (S <= thresh_s[1])] = 1
+    channel_L = np.zeros_like(L)
     channel_L[(S > thresh_l[0]) & (S <= thresh_l[1])] = 1
-    binary = np.maximum(channel_L,channel_S)
+    #binary = np.maximum(channel_L,channel_S)
 
     return binary
 

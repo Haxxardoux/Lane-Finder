@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import collections
 
+
 def morphology_filter(img_):
     gray = cv2.cvtColor(img_, cv2.COLOR_RGB2GRAY)
     # Saturation channel
@@ -18,13 +19,12 @@ def morphology_filter(img_):
     # l is our src image with an opening morphological transformation applied to it. Anything smaller than some value in kernel will be removed. This means smaller abnormalities like lane lines are removed, and nautral gradients like shadows are not. Subtracting them yields the removed items. This is the top hat morphological transformation.
     filtered = src - l
     # 6x6 kernel
-    small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6))
 
     morph_thresh_lower = 1.1*np.mean(filtered) + .7*np.std(filtered)
     morph_binary = np.zeros_like(filtered)
     morph_binary[(filtered >= morph_thresh_lower)] = 1
     # Remove noise with 6x6 kernel
-    morph_binary = cv2.morphologyEx(morph_binary, cv2.MORPH_OPEN, small_kernel)
+   # morph_binary = cv2.morphologyEx(morph_binary, cv2.MORPH_OPEN, small_kernel)
     morph_binary=morph_binary.astype(np.float32)
 
     return morph_binary
@@ -48,10 +48,29 @@ def img_threshold(img_):
 
     return img_out.astype(np.float32)
 
+def apply_color_threshold(image):
+    thresh_s = (170, 255)
+    thresh_l = (150, 255)
+    hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)
+    hls = image.astype(np.float)
+    L = hls[:, :, 1]
+    S = hls[:, :, 2]
+    channel_S = np.zeros_like(S)
+    channel_S[(S > thresh_s[0]) & (S <= thresh_s[1])] = 1
+    channel_L = np.zeros_like(L)
+    channel_L[(L > thresh_l[0]) & (L <= thresh_l[1])] = 1
+    binary = np.maximum(channel_L,channel_S)
+
+    #binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, small_kernel)
+    
+    return binary
+
 imshape=(1920//2, 1080//2)
 roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32)
 pts=np.float32([[375,350],[575,350],[50,530],[900,530]])
 pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
+
+small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 22))
 
 def warp(img):
     matrix = cv2.getPerspectiveTransform(pts,pts2)
@@ -322,7 +341,9 @@ def process_frame(img):
     warped, Minv = warp(img)
 
     # Threshold
+    #thresh = apply_color_threshold(warped)
     thresh = morphology_filter(warped)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, small_kernel)
 
     # Scan for lane lines using a margin search, otherwise use a sliding window search
     if left_line.detected and right_line.detected:
@@ -334,12 +355,12 @@ def process_frame(img):
         validate_lane_update(thresh, left_lane_inds, right_lane_inds)
 
     final = draw_lane(img_original, thresh, Minv)
-    result = assemble_img(warped, morphology_filter(warped), output, final)
+    result = assemble_img(warped, thresh, output, final)
 
     return result
 
 class Line():
-    def __init__(self, maxSamples=4):
+    def __init__(self, maxSamples=8):
 
         self.maxSamples = maxSamples
         # x values of the last n fits of the line
@@ -393,7 +414,7 @@ class Line():
 
 
 if __name__ == "__main__":
-  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
+  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4')
   left_line = Line()
   right_line = Line()
   writer = None
@@ -411,7 +432,7 @@ if __name__ == "__main__":
     if writer is None:
         # Initialize our video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/obstacle_output.mp4', 0x7634706d, 30,
+        writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/shadow_output_combo_thresh.mp4', 0x7634706d, 30,
         (results.shape[1], results.shape[0]))
     
     # Write the output frame to disk
