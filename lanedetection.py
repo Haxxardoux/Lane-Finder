@@ -49,8 +49,7 @@ def img_threshold(img_):
     return img_out.astype(np.float32)
 
 def apply_color_threshold(image):
-    thresh_s = (170, 255)
-    thresh_l = (150, 255)
+
     hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)
     hls = image.astype(np.float)
     L = hls[:, :, 1]
@@ -67,10 +66,10 @@ def apply_color_threshold(image):
 
 imshape=(1920//2, 1080//2)
 roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32)
-pts=np.float32([[375,350],[575,350],[50,530],[900,530]])
+pts=np.float32([[375,340],[575,340],[50,530],[900,530]])
 pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
 
-small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 22))
+small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 20))
 
 def warp(img):
     matrix = cv2.getPerspectiveTransform(pts,pts2)
@@ -333,6 +332,8 @@ def assemble_img(warped, threshold_img, polynomial_img, lane_img):
 
     return img_out
 def process_frame(img):
+    print(thing)
+    print(thresh_l)
     # Resizing & Copy
     img=cv2.resize(img, imshape)
     img_original = np.copy(img)
@@ -340,10 +341,11 @@ def process_frame(img):
     # Bird's eye view
     warped, Minv = warp(img)
 
+
     # Threshold
-    #thresh = apply_color_threshold(warped)
-    thresh = morphology_filter(warped)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, small_kernel)
+    thresh = apply_color_threshold(warped)
+    #thresh = morphology_filter(warped)
+    #thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, small_kernel)
 
     # Scan for lane lines using a margin search, otherwise use a sliding window search
     if left_line.detected and right_line.detected:
@@ -354,6 +356,13 @@ def process_frame(img):
         left_lane_inds, right_lane_inds, output = slide_window(thresh)
         validate_lane_update(thresh, left_lane_inds, right_lane_inds)
 
+    if left_line.points + right_line.points > 20000:
+        thresh_l[0] += 5
+        thresh_s[0] += 5
+    elif left_line.points + right_line.points < 1000:
+        thresh_s[0] -= 3
+        thresh_l[0] -= 3
+        
     final = draw_lane(img_original, thresh, Minv)
     result = assemble_img(warped, thresh, output, final)
 
@@ -393,30 +402,13 @@ class Line():
         self.best_fit = np.mean(self.recent_xfitted, axis=0)
 
 
-# if __name__ == "__main__":
-#   cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
-#   left_line = Line()
-#   right_line = Line()
-#   writer = None
-#   while cap.isOpened():
-#     ret, frame = cap.read()
-#     if not ret:
-#         print ("Not grabbed.")
-#         break
-        
-#     # Run detection
-#     if right_line.points is not None:
-#         right_line.points_last, left_line.points_last = right_line.points, left_line.points
-#     result = process_frame(frame)
-#     cv2.imshow('image', result)
-#     cv2.waitKey(0)
-#     cv2.destroyAllWindows()
-
-
 if __name__ == "__main__":
-  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4')
+  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4')
   left_line = Line()
   right_line = Line()
+  thing = 5
+  thresh_s = [170, 255]
+  thresh_l = [145, 255]
   writer = None
   while cap.isOpened():
     ret, frame = cap.read()
@@ -428,17 +420,39 @@ if __name__ == "__main__":
     if right_line.points is not None:
         right_line.points_last, left_line.points_last = right_line.points, left_line.points
     result = process_frame(frame)
-    results = result.astype(np.uint8)
-    if writer is None:
-        # Initialize our video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/shadow_output_combo_thresh.mp4', 0x7634706d, 30,
-        (results.shape[1], results.shape[0]))
-    
-    # Write the output frame to disk
-    writer.write(results)
+    cv2.imshow('image', result)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
+# if __name__ == "__main__":
+#   cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4')
+#   left_line = Line()
+#   right_line = Line()
+#   writer = None
+#  thresh_s = (170, 255)
+#  thresh_l = (240, 255)
+#   while cap.isOpened():
+#     ret, frame = cap.read()
+#     if not ret:
+#         print ("Not grabbed.")
+#         break
         
-# Release the file pointers
-print("[INFO] cleaning up...")
-cap.release()
-writer.release()
+#     # Run detection
+#     if right_line.points is not None:
+#         right_line.points_last, left_line.points_last = right_line.points, left_line.points
+#     result = process_frame(frame)
+#     results = result.astype(np.uint8)
+#     if writer is None:
+#         # Initialize our video writer
+#         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+#         writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/hard_challenge_out.mp4', 0x7634706d, 30,
+#         (results.shape[1], results.shape[0]))
+    
+#     # Write the output frame to disk
+#     writer.write(results)
+        
+# # Release the file pointers
+# print("[INFO] cleaning up...")
+# cap.release()
+# writer.release()
