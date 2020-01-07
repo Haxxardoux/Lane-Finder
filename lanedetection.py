@@ -7,7 +7,7 @@ def morphology_filter(img_):
     gray = cv2.cvtColor(img_, cv2.COLOR_RGB2GRAY)
     # Saturation channel
     hls_s = cv2.cvtColor(img_, cv2.COLOR_RGB2HLS)[:, :, 2]
-    # copied from github, works like a charm
+    # Combination of grayscale and saturation helps make lanes more defined
     src = 0.3*hls_s + 0.7*gray
     src = np.array(src-np.min(src)/(np.max(src)-np.min(src))).astype('float32')
     blurf = np.zeros((1, 5))
@@ -26,6 +26,9 @@ def morphology_filter(img_):
     # Remove noise with 6x6 kernel
    # morph_binary = cv2.morphologyEx(morph_binary, cv2.MORPH_OPEN, small_kernel)
     morph_binary=morph_binary.astype(np.float32)
+
+    global morph_points
+    morph_points = np.sum(morph_binary)
 
     return morph_binary
 def img_threshold(img_):
@@ -62,14 +65,18 @@ def apply_color_threshold(image):
 
     #binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, small_kernel)
     
+    global color_points
+    color_points = np.sum(binary)
+    
     return binary
 
 imshape=(1920//2, 1080//2)
+
 roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32)
 pts=np.float32([[375,340],[575,340],[50,530],[900,530]])
 pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
 
-small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 20))
+small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6))
 
 def warp(img):
     matrix = cv2.getPerspectiveTransform(pts,pts2)
@@ -264,8 +271,7 @@ def validate_lane_update(img, left_lane_inds, right_lane_inds):
     left_line_ally = nonzeroy[left_lane_inds]
     right_line_allx = nonzerox[right_lane_inds]
     right_line_ally = nonzeroy[right_lane_inds]
-    print('lane pts: ', len(left_line_allx)+len(right_line_allx))
-
+    
     # Discard lane detections that have very little points,
     # as they tend to have unstable results in most cases
     if len(left_line_allx) <= 1000 or len(right_line_allx) <= 1000:
@@ -323,17 +329,20 @@ def assemble_img(warped, threshold_img, polynomial_img, lane_img):
     gray_image = cv2.cvtColor(resized*255,cv2.COLOR_GRAY2RGB)
     img_out[181:361,961:1388,:] = cv2.resize(gray_image,(427,180))
     boxsize, _ = cv2.getTextSize("Filtered", fontFace, fontScale, thickness)
-    cv2.putText(img_out, "Filtered", (int(1494-boxsize[0]/2),281), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
+    cv2.putText(img_out, "Morph points: {}".format(morph_points), (1050,20), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
+    cv2.putText(img_out, "Color points: {}".format(color_points), (1050,40), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
+    cv2.putText(img_out, "Color threshold: {}".format(*thresh_s), (1050,70), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
 
     # Polynomial lines
     img_out[360:540,961:1388,:] = cv2.resize(polynomial_img*255,(427,180))
     boxsize, _ = cv2.getTextSize("Detected Lanes", fontFace, fontScale, thickness)
-    cv2.putText(img_out, "Detected Lanes", (int(1494-boxsize[0]/2),521), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
+    cv2.putText(img_out, "Overlap: {}".format(np.sum(test)/(color_points+morph_points)), (1050,200), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
+    cv2.putText(img_out, "Using: {}".format(foo), (1050,220), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
 
     return img_out
 def process_frame(img):
-    print(thing)
     print(thresh_l)
+
     # Resizing & Copy
     img=cv2.resize(img, imshape)
     img_original = np.copy(img)
@@ -342,29 +351,54 @@ def process_frame(img):
     warped, Minv = warp(img)
 
 
-    # Threshold
-    thresh = apply_color_threshold(warped)
-    #thresh = morphology_filter(warped)
-    #thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, small_kernel)
+    # Color Threshold
+    color_thresh = apply_color_threshold(warped)
+
+    # Tune color threshold for next frame
+    if color_points > 30000:
+        thresh_l[0] += 5
+        thresh_s[0] += 5
+    elif color_points < 20000:
+        thresh_s[0] -= 5
+        thresh_l[0] -= 5
+    else:
+        pass
+    
+    # Morphological threshold
+    morph_thresh = morphology_filter(warped)
+
+    # Combining the thresholds
+    combined_binary = np.zeros_like(morph_thresh)
+    combined_binary[(color_thresh == 1) & (morph_thresh == 1)] = 1
+
+    # For debugging
+    global test
+    test = combined_binary 
+    global foo
+    # If there is not enough overlap (likely due to shadows), stop using color thresholds. Overlap parameter is 20%. 
+    if np.sum(combined_binary)/(color_points+morph_points) > .20:
+        foo = 'Combined'
+        pass
+    else:
+        foo = 'Morph'
+        combined_binary = morph_thresh
+    
+    print('Overlap: ', np.sum(test)/(color_points+morph_points))
+    # Small kernel for filtering noise
+    combined_binary = cv2.morphologyEx(combined_binary, cv2.MORPH_OPEN, small_kernel)
 
     # Scan for lane lines using a margin search, otherwise use a sliding window search
     if left_line.detected and right_line.detected:
-        left_lane_inds, right_lane_inds, output = margin_search(thresh)
-        validate_lane_update(thresh, left_lane_inds, right_lane_inds)
+        left_lane_inds, right_lane_inds, output = margin_search(combined_binary)
+        validate_lane_update(combined_binary, left_lane_inds, right_lane_inds)
 
     else:
-        left_lane_inds, right_lane_inds, output = slide_window(thresh)
-        validate_lane_update(thresh, left_lane_inds, right_lane_inds)
+        left_lane_inds, right_lane_inds, output = slide_window(combined_binary)
+        validate_lane_update(combined_binary, left_lane_inds, right_lane_inds)
 
-    if left_line.points + right_line.points > 20000:
-        thresh_l[0] += 5
-        thresh_s[0] += 5
-    elif left_line.points + right_line.points < 1000:
-        thresh_s[0] -= 3
-        thresh_l[0] -= 3
-        
-    final = draw_lane(img_original, thresh, Minv)
-    result = assemble_img(warped, thresh, output, final)
+    # Done!
+    final = draw_lane(img_original, combined_binary, Minv)
+    result = assemble_img(warped, combined_binary, output, final)
 
     return result
 
@@ -402,36 +436,15 @@ class Line():
         self.best_fit = np.mean(self.recent_xfitted, axis=0)
 
 
-if __name__ == "__main__":
-  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4')
-  left_line = Line()
-  right_line = Line()
-  thing = 5
-  thresh_s = [170, 255]
-  thresh_l = [145, 255]
-  writer = None
-  while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        print ("Not grabbed.")
-        break
-        
-    # Run detection
-    if right_line.points is not None:
-        right_line.points_last, left_line.points_last = right_line.points, left_line.points
-    result = process_frame(frame)
-    cv2.imshow('image', result)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-
 # if __name__ == "__main__":
+#   #cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
 #   cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4')
+
 #   left_line = Line()
 #   right_line = Line()
+#   thresh_s = [170, 255]
+#   thresh_l = [145, 255]
 #   writer = None
-#  thresh_s = (170, 255)
-#  thresh_l = (240, 255)
 #   while cap.isOpened():
 #     ret, frame = cap.read()
 #     if not ret:
@@ -442,17 +455,39 @@ if __name__ == "__main__":
 #     if right_line.points is not None:
 #         right_line.points_last, left_line.points_last = right_line.points, left_line.points
 #     result = process_frame(frame)
-#     results = result.astype(np.uint8)
-#     if writer is None:
-#         # Initialize our video writer
-#         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-#         writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/hard_challenge_out.mp4', 0x7634706d, 30,
-#         (results.shape[1], results.shape[0]))
-    
-#     # Write the output frame to disk
-#     writer.write(results)
+#     cv2.imshow('image', result)
+#     cv2.waitKey(0)
+#     cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4')
+  left_line = Line()
+  right_line = Line()
+  writer = None
+  thresh_s = [170, 255]
+  thresh_l = [145, 255]
+  while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        print ("Not grabbed.")
+        break
         
-# # Release the file pointers
-# print("[INFO] cleaning up...")
-# cap.release()
-# writer.release()
+    # Run detection
+    if right_line.points is not None:
+        right_line.points_last, left_line.points_last = right_line.points, left_line.points
+    result = process_frame(frame)
+    results = result.astype(np.uint8)
+    if writer is None:
+        # Initialize our video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/hard_challenge_out.mp4', 0x7634706d, 30,
+        (results.shape[1], results.shape[0]))
+    
+    # Write the output frame to disk
+    writer.write(results)
+        
+# Release the file pointers
+print("[INFO] cleaning up...")
+cap.release()
+writer.release()
