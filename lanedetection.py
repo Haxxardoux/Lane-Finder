@@ -436,37 +436,15 @@ class Line():
         self.best_fit = np.mean(self.recent_xfitted, axis=0)
 
 
-# if __name__ == "__main__":
-#   #cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
-#   cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4')
-
-#   left_line = Line()
-#   right_line = Line()
-#   thresh_s = [170, 255]
-#   thresh_l = [145, 255]
-#   writer = None
-#   while cap.isOpened():
-#     ret, frame = cap.read()
-#     if not ret:
-#         print ("Not grabbed.")
-#         break
-        
-#     # Run detection
-#     if right_line.points is not None:
-#         right_line.points_last, left_line.points_last = right_line.points, left_line.points
-#     result = process_frame(frame)
-#     cv2.imshow('image', result)
-#     cv2.waitKey(0)
-#     cv2.destroyAllWindows()
-
-
 if __name__ == "__main__":
-  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4')
+  #cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
+  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4')
+
   left_line = Line()
   right_line = Line()
-  writer = None
   thresh_s = [170, 255]
   thresh_l = [145, 255]
+  writer = None
   while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -477,17 +455,39 @@ if __name__ == "__main__":
     if right_line.points is not None:
         right_line.points_last, left_line.points_last = right_line.points, left_line.points
     result = process_frame(frame)
-    results = result.astype(np.uint8)
-    if writer is None:
-        # Initialize our video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/hard_challenge_out.mp4', 0x7634706d, 30,
-        (results.shape[1], results.shape[0]))
-    
-    # Write the output frame to disk
-    writer.write(results)
+    cv2.imshow('image', result) 
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
+# if __name__ == "__main__":
+#   cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4')
+#   left_line = Line()
+#   right_line = Line()
+#   writer = None
+#   thresh_s = [170, 255]
+#   thresh_l = [145, 255]
+#   while cap.isOpened():
+#     ret, frame = cap.read()
+#     if not ret:
+#         print ("Not grabbed.")
+#         break
         
-# Release the file pointers
-print("[INFO] cleaning up...")
-cap.release()
-writer.release()
+#     # Run detection
+#     if right_line.points is not None:
+#         right_line.points_last, left_line.points_last = right_line.points, left_line.points
+#     result = process_frame(frame)
+#     results = result.astype(np.uint8)
+#     if writer is None:
+#         # Initialize our video writer
+#         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+#         writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/shadow_challenge_out.mp4', 0x7634706d, 30,
+#         (results.shape[1], results.shape[0]))
+    
+#     # Write the output frame to disk
+#     writer.write(results)
+        
+# # Release the file pointers
+# print("[INFO] cleaning up...")
+# cap.release()
+# writer.release()
