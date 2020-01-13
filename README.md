@@ -15,7 +15,10 @@ After the resizing, a bird's-eye-view transformation is applied to a specified r
 
 ### Thresholding / filtering
 
+Several methods of thresholding were tried, but only 2 yielded sufficiently different results to merit implementation (for example, there is a large overlap between gradient and morphological). Color (HLS) and morphological. 
 
+# Fix later
+The main method of filtering is done by the top-hat approach of morphologial thresholding. 
 
 
 # Contents

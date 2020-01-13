@@ -6,9 +6,10 @@ import collections
 def morphology_filter(img_):
     gray = cv2.cvtColor(img_, cv2.COLOR_RGB2GRAY)
     # Saturation channel
-    hls_s = cv2.cvtColor(img_, cv2.COLOR_RGB2HLS)[:, :, 2]
+    #hls_s = cv2.cvtColor(img_, cv2.COLOR_RGB2HLS)[:, :, 2]
     # Combination of grayscale and saturation helps make lanes more defined
-    src = 0.3*hls_s + 0.7*gray
+    #src = 0.3*hls_s + 0.7*gray
+    src = agray
     src = np.array(src-np.min(src)/(np.max(src)-np.min(src))).astype('float32')
     blurf = np.zeros((1, 5))
     blurf.fill(1)
@@ -31,6 +32,8 @@ def morphology_filter(img_):
     morph_points = np.sum(morph_binary)
 
     return morph_binary
+
+
 def img_threshold(img_):
 
     # Use HLS Channels for color Thresholding 
@@ -76,7 +79,7 @@ roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32
 pts=np.float32([[375,340],[575,340],[50,530],[900,530]])
 pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
 
-small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6))
+small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 12))
 
 def warp(img):
     matrix = cv2.getPerspectiveTransform(pts,pts2)
@@ -398,7 +401,7 @@ def process_frame(img):
 
     # Done!
     final = draw_lane(img_original, combined_binary, Minv)
-    result = assemble_img(warped, combined_binary, output, final)
+    result = assemble_img(warped, morph_thresh, output, final)
 
     return result
 
@@ -438,7 +441,7 @@ class Line():
 
 if __name__ == "__main__":
   #cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
-  cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4')
+  cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4")
 
   left_line = Line()
   right_line = Line()
