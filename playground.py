@@ -2,6 +2,8 @@ import numpy as np
 import cv2
 import collections
 import matplotlib.pyplot as plt
+import time
+
 imshape=(1920//2, 1080//2)
 
 roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32)
@@ -11,7 +13,7 @@ pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
 small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6))
 
 class Line():
-    def __init__(self, maxSamples=8):
+    def __init__(self, maxSamples=5):
 
         self.maxSamples = maxSamples
         # x values of the last n fits of the line
@@ -145,8 +147,6 @@ def margin_search(binary_warped):
 
     left_lane_inds = ((nonzerox > (left_line.current_fit[0]*(nonzeroy**2) + left_line.current_fit[1]*nonzeroy + left_line.current_fit[2] - margin)) & (nonzerox < (left_line.current_fit[0]*(nonzeroy**2) + left_line.current_fit[1]*nonzeroy + left_line.current_fit[2] + margin)))
     right_lane_inds = ((nonzerox > (right_line.current_fit[0]*(nonzeroy**2) + right_line.current_fit[1]*nonzeroy + right_line.current_fit[2] - margin)) & (nonzerox < (right_line.current_fit[0]*(nonzeroy**2) + right_line.current_fit[1]*nonzeroy + right_line.current_fit[2] + margin)))
-    left_line.points = left_lane_inds.sum()
-    right_line.points = right_lane_inds.sum()
 
     # Again, extract left and right line pixel positions
     leftx = nonzerox[left_lane_inds]
@@ -249,6 +249,7 @@ def assemble_img(warped, threshold_img, polynomial_img, lane_img):
     # Main image
     img_out=np.zeros((540,1388,3), dtype=np.uint8)
     img_out[0:540,0:960,:] = lane_img
+    #cv2.putText(img_out, "Time: {}".format(deltaT), (40,40), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
 
     # Text formatting
     fontScale=1
@@ -336,6 +337,108 @@ def draw_lane(undist, img, Minv):
         return result
     return undist
 
+def ransac_polyfit(thresh, order=2, n=80, k=50, t=50, d=50, f=0.8):
+  # thresh - thresholded image
+  # n – minimum number of data points required to fit the model
+  # k – maximum number of iterations allowed in the algorithm
+  # t – threshold value to determine when a data point fits a model
+  # d – number of close data points required to assert that a model fits well to data
+  # f – fraction of close data points required
+
+    # Convert thresholded image to x/y indices 
+    nonzero = thresh.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+    margin = 50
+
+    # Distinguish between right and left lane - margin search
+    left_lane_inds = ((nonzerox > (left_line.current_fit[0]*(nonzeroy**2) + left_line.current_fit[1]*nonzeroy + left_line.current_fit[2] - margin)) & (nonzerox < (left_line.current_fit[0]*(nonzeroy**2) + left_line.current_fit[1]*nonzeroy + left_line.current_fit[2] + margin)))
+    right_lane_inds = ((nonzerox > (right_line.current_fit[0]*(nonzeroy**2) + right_line.current_fit[1]*nonzeroy + right_line.current_fit[2] - margin)) & (nonzerox < (right_line.current_fit[0]*(nonzeroy**2) + right_line.current_fit[1]*nonzeroy + right_line.current_fit[2] + margin)))
+    
+    # Right lane - convert to x, y and reduce number of points    
+    rightx = nonzerox[right_lane_inds] - 1
+    righty = nonzeroy[right_lane_inds] - 1
+
+    #righty = thresh.shape[0] - nonzeroy[right_lane_inds] - 1
+
+    while len(rightx) > 100:
+        rightx = rightx[0::2]
+        righty = righty[0::2]
+
+    # Left lane - convert to x, y and reduce number of points    
+    leftx = nonzerox[left_lane_inds] - 1
+    lefty = nonzeroy[left_lane_inds] - 1
+
+    while len(leftx) > 100:
+        leftx = leftx[0::2]
+        lefty = lefty[0::2]
+
+    # Generate plot of just right lane for debugging
+    debugging = np.array(np.zeros_like(thresh))
+    debugging[righty, rightx] = 1
+    debugging = debugging.astype(np.int32)
+
+    right_besterr = np.inf
+    right_bestfit = None
+
+    # Right lane, ransac algorithm
+    for kk in range(k):
+        maybeinliers = np.random.randint(len(righty), size=n)        
+        maybemodel = np.polyfit(righty[maybeinliers], rightx[maybeinliers], order)
+        alsoinliers = np.abs(np.polyval(maybemodel, righty)-rightx) < t
+        if sum(alsoinliers) > len(righty)*f  and sum(alsoinliers) > d:
+            bettermodel = np.polyfit(righty[alsoinliers], rightx[alsoinliers], order)
+            thiserr = np.sum(np.abs(np.polyval(bettermodel, righty[alsoinliers])-rightx[alsoinliers]))
+            if thiserr < right_besterr:
+                right_bestfit = bettermodel
+                right_besterr = thiserr
+
+    left_besterr = np.inf
+    left_bestfit = None
+
+    # Left lane, ransac algorithm
+    for kk in range(k):
+        maybeinliers = np.random.randint(len(lefty), size=n)        
+        maybemodel = np.polyfit(lefty[maybeinliers], leftx[maybeinliers], order)
+        alsoinliers = np.abs(np.polyval(maybemodel, lefty)-leftx) < t
+        if sum(alsoinliers) > len(lefty)*f  and sum(alsoinliers) > d:
+            bettermodel = np.polyfit(lefty[alsoinliers], leftx[alsoinliers], order)
+            thiserr = np.sum(np.abs(np.polyval(bettermodel, lefty[alsoinliers])-leftx[alsoinliers]))
+            if thiserr < left_besterr:
+                left_bestfit = bettermodel
+                left_besterr = thiserr
+
+    # generating points for lines
+    ploty = np.linspace(0, thresh.shape[1] - 1, thresh.shape[1])
+    right_fitx = right_bestfit[0]*ploty**2 + right_bestfit[1]*ploty + right_bestfit[2]
+    left_fitx = left_bestfit[0]*ploty**2 + left_bestfit[1]*ploty + left_bestfit[2]
+
+    plt.plot(rightx,righty)
+    plt.plot(right_fitx,ploty)
+    plt.plot(leftx,lefty)
+    plt.plot(left_fitx,ploty)
+
+    plt.ylim(0,540)
+    plt.xlim(0,960)
+
+
+    # Generate a blank image to draw on
+    out_img = np.dstack((thresh, thresh, thresh))*255
+
+    # Create an image to draw on and an image to show the selection window
+    window_img = np.zeros_like(out_img)
+    # Color in left and right line pixels
+    out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [1, 0, 0]
+    out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 1]
+
+    # Draw polyline on image
+    right = np.asarray(tuple(zip(right_fitx, ploty)), np.int32)
+    left = np.asarray(tuple(zip(left_fitx, ploty)), np.int32)
+    cv2.polylines(out_img, [right], False, (1,1,0), thickness=5)
+    cv2.polylines(out_img, [left], False, (1,1,0), thickness=5)
+
+
+    return left_lane_inds, right_lane_inds, out_img
 
 
 def process_frame(img):
@@ -351,15 +454,25 @@ def process_frame(img):
     # Small kernel for filtering noise
     morph_thresh = cv2.morphologyEx(morph_thresh, cv2.MORPH_OPEN, small_kernel)
 
-    # Scan for lane lines using a margin search, otherwise use a sliding window search
+    # Scan for lane lines using a RANSAC margin search, otherwise use a sliding window search
     if left_line.detected and right_line.detected:
-        left_lane_inds, right_lane_inds, output = margin_search(morph_thresh)
+        t0 = time.time()
+        left_lane_inds, right_lane_inds, output = ransac_polyfit(morph_thresh)
         validate_lane_update(morph_thresh, left_lane_inds, right_lane_inds)
-
+        t1 = time.time()
+        print('Time: ', t1-t0)
     else:
         left_lane_inds, right_lane_inds, output = slide_window(morph_thresh)
         validate_lane_update(morph_thresh, left_lane_inds, right_lane_inds)
-   
+    
+    plt.show()
+    #fit = ransac_polyfit(morph_thresh, order=2, n=50, k=200, t=50, d=50, f=0.8)
+      # n – minimum number of data points required to fit the model
+     # k – maximum number of iterations allowed in the algorithm
+    # t – threshold value to determine when a data point fits a model
+      # d – number of close data points required to assert that a model fits well to data
+     # f – fraction of close data points required
+    #print('params: ', fit)
     # Done!
     final = draw_lane(img_original, morph_thresh, Minv)
     result = assemble_img(warped, morph_thresh, output, final)
