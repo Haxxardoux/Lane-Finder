@@ -7,7 +7,7 @@ import time
 imshape=(1920//2, 1080//2)
 
 roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32)
-pts=np.float32([[375,350],[575,350],[50,530],[900,530]])
+pts=np.float32([[325,355],[625,355],[40,530],[910,530]])
 pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
 
 small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6))
@@ -377,7 +377,7 @@ def draw_lane(undist, img, Minv):
         return result
     return undist
 
-def ransac_polyfit(thresh, order=2, n=80, k=100, t=50, d=50, f=0.8):
+def ransac_polyfit(thresh, order=2, n=100, k=100, t=50, d=43, f=0.8):
   # thresh - thresholded image
   # n – minimum number of data points required to fit the model
   # k – maximum number of iterations allowed in the algorithm
@@ -389,7 +389,7 @@ def ransac_polyfit(thresh, order=2, n=80, k=100, t=50, d=50, f=0.8):
     nonzero = thresh.nonzero()
     nonzeroy = np.array(nonzero[0])
     nonzerox = np.array(nonzero[1])
-    margin = 50
+    margin = 60
 
     # Distinguish between right and left lane - margin search
     left_lane_inds = ((nonzerox > (left_line.current_fit[0]*(nonzeroy**2) + left_line.current_fit[1]*nonzeroy + left_line.current_fit[2] - margin)) & (nonzerox < (left_line.current_fit[0]*(nonzeroy**2) + left_line.current_fit[1]*nonzeroy + left_line.current_fit[2] + margin)))
@@ -521,15 +521,15 @@ def process_frame(img):
     morph_thresh = cv2.morphologyEx(morph_thresh, cv2.MORPH_OPEN, small_kernel)
 
     # Scan for lane lines using a RANSAC margin search, otherwise use a sliding window search
-    if left_line.detected and right_line.detected:
+    if left_line.bestx is None:
+        left_lane_inds, right_lane_inds, output = slide_window(combined_binary)
+        validate_lane_update(combined_binary, left_lane_inds, right_lane_inds)
+    else:
         t0 = time.time()
         left_lane_inds, right_lane_inds, output = ransac_polyfit(combined_binary)
         validate_lane_update(combined_binary, left_lane_inds, right_lane_inds)
         t1 = time.time()
         print('Time: ', t1-t0)
-    else:
-        left_lane_inds, right_lane_inds, output = slide_window(combined_binary)
-        validate_lane_update(combined_binary, left_lane_inds, right_lane_inds)
     
     #plt.show()
     # Done!
