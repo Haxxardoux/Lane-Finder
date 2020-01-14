@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 imshape=(1920//2, 1080//2)
 
 roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32)
-pts=np.float32([[375,340],[575,340],[50,530],[900,530]])
+pts=np.float32([[375,350],[575,350],[50,530],[900,530]])
 pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
 
 small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6))
@@ -194,36 +194,7 @@ def margin_search(binary_warped):
     cv2.polylines(out_img, [left], False, (1,1,0), thickness=5)
 
     return left_lane_inds, right_lane_inds, out_img
-def draw_lane(undist, img, Minv):
-    # Generate x and y values for plotting
-    ploty = np.linspace(0, undist.shape[0] - 1, undist.shape[0])
-    # Create an image to draw the lines on
-    warp_zero = np.zeros_like(img).astype(np.uint8)
-    color_warp = np.stack((warp_zero, warp_zero, warp_zero), axis=-1)
 
-    left_fit = left_line.best_fit
-    right_fit = right_line.best_fit
-
-    if left_fit is not None and right_fit is not None:
-        left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-
-        # Recast the x and y points into usable format for cv2.fillPoly()
-        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-        right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
-        pts = np.hstack((pts_left, pts_right))
-
-        # Draw the lane onto the warped blank image
-        cv2.fillPoly(color_warp, np.int_([pts]), (64, 224, 208))
-
-        # Warp the blank back to original image space using inverse perspective matrix (Minv)
-        newwarp = cv2.warpPerspective(color_warp, Minv, (undist.shape[1], undist.shape[0]))
-
-        # Combine the result with the original image
-        result = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
-
-        return result
-    return undist
 def validate_lane_update(img, left_lane_inds, right_lane_inds):
     # Checks if detected lanes are good enough before updating
     img_size = (img.shape[1], img.shape[0])
@@ -334,57 +305,36 @@ def morphology_filter(img_):
 
     return morph_binary
 
-def ransac_polyfit(thresh, order=3, n=20, k=100, t=0.1, d=100, f=0.8):
-  # thresh - thresholded image
-  # n – minimum number of data points required to fit the model
-  # k – maximum number of iterations allowed in the algorithm
-  # t – threshold value to determine when a data point fits a model
-  # d – number of close data points required to assert that a model fits well to data
-  # f – fraction of close data points required
+def draw_lane(undist, img, Minv):
+    # Generate x and y values for plotting
+    ploty = np.linspace(0, undist.shape[0] - 1, undist.shape[0])
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(img).astype(np.uint8)
+    color_warp = np.stack((warp_zero, warp_zero, warp_zero), axis=-1)
 
-    # Convert thresholded image to x/y indices 
-    nonzero = thresh.nonzero()
-    nonzeroy = np.array(nonzero[0])
-    nonzerox = np.array(nonzero[1])
-    margin = 50
+    left_fit = left_line.best_fit
+    right_fit = right_line.best_fit
 
-    # Distinguish between right and left lane - margin search
-    left_lane_inds = ((nonzerox > (left_line.current_fit[0]*(nonzeroy**2) + left_line.current_fit[1]*nonzeroy + left_line.current_fit[2] - margin)) & (nonzerox < (left_line.current_fit[0]*(nonzeroy**2) + left_line.current_fit[1]*nonzeroy + left_line.current_fit[2] + margin)))
-    right_lane_inds = ((nonzerox > (right_line.current_fit[0]*(nonzeroy**2) + right_line.current_fit[1]*nonzeroy + right_line.current_fit[2] - margin)) & (nonzerox < (right_line.current_fit[0]*(nonzeroy**2) + right_line.current_fit[1]*nonzeroy + right_line.current_fit[2] + margin)))
-    
-    # Generate plot of just right lane for debugging
-    debugging = np.array(np.zeros_like(thresh))
-    debugging[right_lane_inds[0],right_lane_inds[1]] = 1
-    debugging = debugging.astype(np.int32)
-    
-    plt.imshow(debugging)
-    print('debug index pts', sum(right_lane_inds))
-    print('debug img',sum(sum(debugging)))
-    # Again, extract left and right line pixel positions
-    left = []
-    left.append(nonzerox[left_lane_inds])
-    left.append(nonzeroy[left_lane_inds])
-    right = []
-    right.append(nonzerox[right_lane_inds])
-    right.append(nonzeroy[right_lane_inds])
-    lanes = [left,right]
-    besterr = np.inf
-    bestfit = None
+    if left_fit is not None and right_fit is not None:
+        left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
 
-    for kk in range(k):
-        maybeinliers = np.random.randint(len(right[0]), size=n)
-        maybemodel = np.polyfit(right[0][maybeinliers], right[1][maybeinliers], order)
-        alsoinliers = np.abs(np.polyval(maybemodel, right[0])-right[1]) < t
-        if sum(alsoinliers) > d and sum(alsoinliers) > len(right[0])*f:
-            bettermodel = np.polyfit(right[0][alsoinliers], right[1][alsoinliers], order)
-            thiserr = np.sum(np.abs(np.polyval(bettermodel, right[0][alsoinliers])-right[1][alsoinliers]))
-            if thiserr < besterr:
-                bestfit = bettermodel
-                besterr = thiserr
-                
-    
+        # Recast the x and y points into usable format for cv2.fillPoly()
+        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+        right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+        pts = np.hstack((pts_left, pts_right))
 
-    return bestfit, debugging
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(color_warp, np.int_([pts]), (64, 224, 208))
+
+        # Warp the blank back to original image space using inverse perspective matrix (Minv)
+        newwarp = cv2.warpPerspective(color_warp, Minv, (undist.shape[1], undist.shape[0]))
+
+        # Combine the result with the original image
+        result = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
+
+        return result
+    return undist
 
 
 
@@ -410,14 +360,6 @@ def process_frame(img):
         left_lane_inds, right_lane_inds, output = slide_window(morph_thresh)
         validate_lane_update(morph_thresh, left_lane_inds, right_lane_inds)
    
-    ransac_polyfit(morph_thresh, order=3, n=20, k=100, t=0.1, d=100, f=0.8)
-    # thresh - thresholded image
-  # n – minimum number of data points required to fit the model
-  # k – maximum number of iterations allowed in the algorithm
-  # t – threshold value to determine when a data point fits a model
-  # d – number of close data points required to assert that a model fits well to data
-  # f – fraction of close data points required
-    plt.show()
     # Done!
     final = draw_lane(img_original, morph_thresh, Minv)
     result = assemble_img(warped, morph_thresh, output, final)
