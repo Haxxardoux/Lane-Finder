@@ -3,11 +3,13 @@ import cv2
 import collections
 import matplotlib.pyplot as plt
 import time
+import math
+import random
 
 imshape=(1920//2, 1080//2)
 
 roi_vertices = np.array([[575,350],[900,530],[50,530],[375,350]], dtype=np.int32)
-pts=np.float32([[325,355],[625,355],[40,530],[910,530]])
+pts=np.float32([[375,355],[575,355],[50,530],[900,530]])
 pts2=np.float32([[250,0],[960,0],[250,540],[960,540]])
 
 small_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6))
@@ -44,21 +46,16 @@ class Line():
         self.recent_xfitted.append(self.current_fit)
         # Use the queue mean as the best fit
         self.best_fit = np.mean(self.recent_xfitted, axis=0)
-def apply_color_threshold(image):
+def apply_color_threshold(image, s_thresh, l_thresh):
     hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)
     hls = image.astype(np.float)
     L = hls[:, :, 1]
     S = hls[:, :, 2]
     channel_S = np.zeros_like(S)
-    channel_S[(S > thresh_s[0]) & (S <= thresh_s[1])] = 1
+    channel_S[(S > s_thresh[0]) & (S <= s_thresh[1])] = 1
     channel_L = np.zeros_like(L)
-    channel_L[(L > thresh_l[0]) & (L <= thresh_l[1])] = 1
+    channel_L[(L > l_thresh[0]) & (L <= l_thresh[1])] = 1
     binary = np.maximum(channel_L,channel_S)
-
-    #binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, small_kernel)
-    
-    global color_points
-    color_points = np.sum(binary)
     
     return binary
 def warp(img):
@@ -308,7 +305,11 @@ def assemble_img(warped, threshold_img, polynomial_img, lane_img):
     img_out[181:361,961:1388,:] = cv2.resize(gray_image,(427,180))
     boxsize, _ = cv2.getTextSize("Filtered", fontFace, fontScale, thickness)
     cv2.putText(img_out, "Morph points: {}".format(morph_points), (1050,20), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
+    cv2.putText(img_out, "Color points: {}".format(color_points), (1050,40), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
     cv2.putText(img_out, "Color threshold: {}".format(*thresh_s), (1050,70), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
+    cv2.putText(img_out, 'overlap: {}'.format(combined_sum/(color_points+morph_points).round(2)), (1050,90), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
+
+    cv2.putText(img_out, str(foo), (1050,120), fontFace, fontScale,(255,255,255), thickness,  lineType = cv2.LINE_AA)
 
     # Polynomial lines
     img_out[360:540,961:1388,:] = cv2.resize(polynomial_img*255,(427,180))
@@ -319,10 +320,9 @@ def assemble_img(warped, threshold_img, polynomial_img, lane_img):
 def morphology_filter(img_):
     gray = cv2.cvtColor(img_, cv2.COLOR_RGB2GRAY)
     # Saturation channel
-    #hls_s = cv2.cvtColor(img_, cv2.COLOR_RGB2HLS)[:, :, 2]
+    hls_s = cv2.cvtColor(img_, cv2.COLOR_RGB2HLS)[:, :, 2]
     # Combination of grayscale and saturation helps make lanes more defined
-    #src = 0.3*hls_s + 0.7*gray
-    src = gray
+    src = 0.3*hls_s + 0.7*gray
     src = np.array(src-np.min(src)/(np.max(src)-np.min(src))).astype('float32')
     blurf = np.zeros((1, 5))
     blurf.fill(1)
@@ -345,7 +345,6 @@ def morphology_filter(img_):
     morph_points = np.sum(morph_binary)
 
     return morph_binary
-
 def draw_lane(undist, img, Minv):
     # Generate x and y values for plotting
     ploty = np.linspace(0, undist.shape[0] - 1, undist.shape[0])
@@ -377,7 +376,7 @@ def draw_lane(undist, img, Minv):
         return result
     return undist
 
-def ransac_polyfit(thresh, order=2, n=100, k=100, t=50, d=43, f=0.8):
+def ransac_polyfit(thresh, order=2, n=10, k=15, t=15, d=43, f=0.7):
   # thresh - thresholded image
   # n – minimum number of data points required to fit the model
   # k – maximum number of iterations allowed in the algorithm
@@ -413,35 +412,54 @@ def ransac_polyfit(thresh, order=2, n=100, k=100, t=50, d=43, f=0.8):
         leftx = leftx[0::2]
         lefty = lefty[0::2]
 
-    # Generate plot of just right lane for debugging
-    debugging = np.array(np.zeros_like(thresh))
-    debugging[righty, rightx] = 1
-    debugging = debugging.astype(np.int32)
+    # # Generate plot of just right lane for debugging
+    # debugging = np.array(np.zeros_like(thresh))
+    # debugging[righty, rightx] = 1
+    # debugging = debugging.astype(np.int32)
 
     right_besterr = np.inf
     right_bestfit = None
 
     # Right lane, ransac algorithm
+    right_containers = []
+    m = math.floor(len(righty)/8)
+    right_containers = np.array(np.reshape(list(range(0, 8*m)),(8,m)))
+    right_containers = right_containers[[0,1,3,4,6,7]]
+    n=0
+    
+    ploty = np.linspace(0, thresh.shape[1] - 1, thresh.shape[1])
+
+    timedelta = []
     for kk in range(k):
-        maybeinliers = np.random.randint(len(righty), size=n)        
+        # ~~~~ 5% of the computation time is spent on this part ~~~~~
+        maybeinliers = [random.sample(list(right_container), k = 5) for right_container in right_containers]
+        maybeinliers = [item for sublist in maybeinliers for item in sublist]
         maybemodel = np.polyfit(righty[maybeinliers], rightx[maybeinliers], order)
         alsoinliers = np.abs(np.polyval(maybemodel, righty)-rightx) < t
-        if sum(alsoinliers) > len(righty)*f  and sum(alsoinliers) > d:
+        # ~~~~ Through this part ~~~~
+        if sum(alsoinliers) > len(righty)*f:
             bettermodel = np.polyfit(righty[alsoinliers], rightx[alsoinliers], order)
             thiserr = np.sum(np.abs(np.polyval(bettermodel, righty[alsoinliers])-rightx[alsoinliers]))
             if thiserr < right_besterr:
                 right_bestfit = bettermodel
                 right_besterr = thiserr
 
+
     left_besterr = np.inf
     left_bestfit = None
 
     # Left lane, ransac algorithm
-    for kk in range(k):
-        maybeinliers = np.random.randint(len(lefty), size=n)        
+    left_containers = []
+    m = math.floor(len(lefty)/8)
+    left_containers = np.array(np.reshape(list(range(0, 8*m)),(8,m)))
+    left_containers = left_containers[[0,1,3,4,6,7]]
+    
+    for kk in range(k):    
+        maybeinliers = [random.sample(list(left_container), k = 5) for left_container in left_containers]
+        maybeinliers = [item for sublist in maybeinliers for item in sublist]
         maybemodel = np.polyfit(lefty[maybeinliers], leftx[maybeinliers], order)
         alsoinliers = np.abs(np.polyval(maybemodel, lefty)-leftx) < t
-        if sum(alsoinliers) > len(lefty)*f  and sum(alsoinliers) > d:
+        if sum(alsoinliers) > len(lefty)*f:
             bettermodel = np.polyfit(lefty[alsoinliers], leftx[alsoinliers], order)
             thiserr = np.sum(np.abs(np.polyval(bettermodel, lefty[alsoinliers])-leftx[alsoinliers]))
             if thiserr < left_besterr:
@@ -449,17 +467,17 @@ def ransac_polyfit(thresh, order=2, n=100, k=100, t=50, d=43, f=0.8):
                 left_besterr = thiserr
 
     # generating points for lines
-    ploty = np.linspace(0, thresh.shape[1] - 1, thresh.shape[1])
+    # linspace was originally here
     right_fitx = right_bestfit[0]*ploty**2 + right_bestfit[1]*ploty + right_bestfit[2]
     left_fitx = left_bestfit[0]*ploty**2 + left_bestfit[1]*ploty + left_bestfit[2]
 
-    plt.plot(rightx,righty)
-    plt.plot(right_fitx,ploty)
-    plt.plot(leftx,lefty)
-    plt.plot(left_fitx,ploty)
+    # plt.plot(rightx,righty)
+    # plt.plot(right_fitx,ploty)
+    # plt.plot(leftx,lefty)
+    # plt.plot(left_fitx,ploty)
 
-    plt.ylim(0,540)
-    plt.xlim(0,960)
+    # plt.ylim(0,540)
+    # plt.xlim(0,960)
 
 
     # Generate a blank image to draw on
@@ -489,7 +507,9 @@ def process_frame(img):
 
 
     # Color Threshold
-    color_thresh = apply_color_threshold(warped)
+    color_thresh = apply_color_threshold(warped, thresh_s, thresh_l)
+    global color_points
+    color_points = np.sum(color_thresh)
 
     # Tune color threshold for next frame
     if color_points > 30000:
@@ -508,17 +528,22 @@ def process_frame(img):
     combined_binary = np.zeros_like(morph_thresh)
     combined_binary[(color_thresh == 1) & (morph_thresh == 1)] = 1
 
+    global combined_sum
+    combined_sum = np.sum(combined_binary)
 
     # If there is not enough overlap (likely due to shadows), stop using color thresholds. Overlap parameter is 20%. 
-    if np.sum(combined_binary)/(color_points+morph_points) > .20:
+    global foo
+    if combined_sum/(color_points+morph_points) > .20:
         foo = 'Combined'
         pass
     else:
         foo = 'Morph'
-        combined_binary = morph_thresh
+        color_temp = apply_color_threshold(warped,[150,255],[150,255])
+        combined_binary = np.zeros_like(morph_thresh)
+        combined_binary[(morph_thresh == 1) & (color_temp == 1)] = 1
     
     # Small kernel for filtering noise
-    morph_thresh = cv2.morphologyEx(morph_thresh, cv2.MORPH_OPEN, small_kernel)
+    combined_binary = cv2.morphologyEx(combined_binary, cv2.MORPH_OPEN, small_kernel)
 
     # Scan for lane lines using a RANSAC margin search, otherwise use a sliding window search
     if left_line.bestx is None:
@@ -533,61 +558,61 @@ def process_frame(img):
     
     #plt.show()
     # Done!
-    final = draw_lane(img_original, morph_thresh, Minv)
-    result = assemble_img(warped, morph_thresh, output, final)
+    final = draw_lane(img_original, combined_binary, Minv)
+    result = assemble_img(warped, combined_binary, output, final)
     
     
     return result
 
 
-# if __name__ == "__main__":
-#   #cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
-#   #cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4")
-#   cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4")
-
-#   left_line = Line()
-#   right_line = Line()
-#   thresh_s = [170, 255]
-#   thresh_l = [145, 255]
-#   writer = None
-#   while cap.isOpened():
-#     ret, frame = cap.read()
-#     if not ret:
-#         print("Not grabbed.")
-#         break
-        
-#     # Run detection
-#     if right_line.points is not None:
-#         right_line.points_last, left_line.points_last = right_line.points, left_line.points
-#     result = process_frame(frame)
-#     cv2.imshow('image', result) 
-#     cv2.waitKey(0)
-#     cv2.destroyAllWindows()
-
-
 if __name__ == "__main__":
-  cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4")
+  #cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
+  cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4")
+  #aacap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4")
+
   left_line = Line()
   right_line = Line()
-  writer = None
   thresh_s = [170, 255]
   thresh_l = [145, 255]
+  writer = None
   while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        print ("Not grabbed.")
+        print("Not grabbed.")
         break
         
     # Run detection
     if right_line.points is not None:
         right_line.points_last, left_line.points_last = right_line.points, left_line.points
     result = process_frame(frame)
-    results = result.astype(np.uint8)
-    if writer is None:
-        # Initialize our video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/harder_challenge_out2.mp4', 0x7634706d, 30,
-        (results.shape[1], results.shape[0]))
+    cv2.imshow('image', result) 
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
+# if __name__ == "__main__":
+#   cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4")
+#   left_line = Line()
+#   right_line = Line()
+#   writer = None
+#   thresh_s = [170, 255]
+#   thresh_l = [145, 255]
+#   while cap.isOpened():
+#     ret, frame = cap.read()
+#     if not ret:
+#         print ("Not grabbed.")
+#         break
+        
+#     # Run detection
+#     if right_line.points is not None:
+#         right_line.points_last, left_line.points_last = right_line.points, left_line.points
+#     result = process_frame(frame)
+#     results = result.astype(np.uint8)
+#     if writer is None:
+#         # Initialize our video writer
+#         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+#         writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/harder_challenge_out1.mp4', 0x7634706d, 30,
+#         (results.shape[1], results.shape[0]))
     
-    # Write the output frame to disk
-    writer.write(results)
+#     # Write the output frame to disk
+#     writer.write(results)
