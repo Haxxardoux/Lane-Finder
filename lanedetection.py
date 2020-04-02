@@ -376,7 +376,7 @@ def draw_lane(undist, img, Minv):
         return result
     return undist
 
-def ransac_polyfit(thresh, order=2, n=10, k=15, t=15, d=43, f=0.7):
+def ransac_polyfit(thresh, order=2, n=10, k=15, t=20, d=20, f=0.7):
   # thresh - thresholded image
   # n – minimum number of data points required to fit the model
   # k – maximum number of iterations allowed in the algorithm
@@ -437,6 +437,8 @@ def ransac_polyfit(thresh, order=2, n=10, k=15, t=15, d=43, f=0.7):
         maybemodel = np.polyfit(righty[maybeinliers], rightx[maybeinliers], order)
         alsoinliers = np.abs(np.polyval(maybemodel, righty)-rightx) < t
         # ~~~~ Through this part ~~~~
+
+        # Matrix logic is slowing down rendering time by 75%
         if sum(alsoinliers) > len(righty)*f:
             bettermodel = np.polyfit(righty[alsoinliers], rightx[alsoinliers], order)
             thiserr = np.sum(np.abs(np.polyval(bettermodel, righty[alsoinliers])-rightx[alsoinliers]))
@@ -565,54 +567,54 @@ def process_frame(img):
     return result
 
 
-if __name__ == "__main__":
-  #cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
-  cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4")
-  #aacap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4")
-
-  left_line = Line()
-  right_line = Line()
-  thresh_s = [170, 255]
-  thresh_l = [145, 255]
-  writer = None
-  while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        print("Not grabbed.")
-        break
-        
-    # Run detection
-    if right_line.points is not None:
-        right_line.points_last, left_line.points_last = right_line.points, left_line.points
-    result = process_frame(frame)
-    cv2.imshow('image', result) 
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-
 # if __name__ == "__main__":
-#   cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4")
+#   #cap = cv2.VideoCapture('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/obstacle_challenge.mp4')
+#   cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4")
+#   #aacap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/harder_challenge_video.mp4")
+
 #   left_line = Line()
 #   right_line = Line()
-#   writer = None
 #   thresh_s = [170, 255]
 #   thresh_l = [145, 255]
+#   writer = None
 #   while cap.isOpened():
 #     ret, frame = cap.read()
 #     if not ret:
-#         print ("Not grabbed.")
+#         print("Not grabbed.")
 #         break
         
 #     # Run detection
 #     if right_line.points is not None:
 #         right_line.points_last, left_line.points_last = right_line.points, left_line.points
 #     result = process_frame(frame)
-#     results = result.astype(np.uint8)
-#     if writer is None:
-#         # Initialize our video writer
-#         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-#         writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/harder_challenge_out1.mp4', 0x7634706d, 30,
-#         (results.shape[1], results.shape[0]))
+#     cv2.imshow('image', result) 
+#     cv2.waitKey(0)
+#     cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+  cap = cv2.VideoCapture("C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Input_videos/shadow_challenge.mp4")
+  left_line = Line()
+  right_line = Line()
+  writer = None
+  thresh_s = [170, 255]
+  thresh_l = [145, 255]
+  while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        print ("Not grabbed.")
+        break
+        
+    # Run detection
+    if right_line.points is not None:
+        right_line.points_last, left_line.points_last = right_line.points, left_line.points
+    result = process_frame(frame)
+    results = result.astype(np.uint8)
+    if writer is None:
+        # Initialize our video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter('C:/Users/turbo/Documents/Lane-finder/Lane-Finder/Output_videos/harder_challenge_out1.mp4', 0x7634706d, 30,
+        (results.shape[1], results.shape[0]))
     
-#     # Write the output frame to disk
-#     writer.write(results)
+    # Write the output frame to disk
+    writer.write(results)
