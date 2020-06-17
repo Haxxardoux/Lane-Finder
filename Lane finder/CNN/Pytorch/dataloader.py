@@ -12,12 +12,13 @@ CFG = config.cfg
 new_size = CFG.new_size
 batch_size = CFG.batch_size
 
-def image_loader(img_files, mask_files):
+def train_image_loader(img_files, mask_files):
     train_dataset = ImageDataset(img_files, mask_files)
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=batch_size,
         num_workers=0,
+        pin_memory = True,
         shuffle=False
     )
     return train_loader
@@ -61,6 +62,7 @@ def val_image_loader(img_files):
         train_dataset,
         batch_size=batch_size,
         num_workers=0,
+        pin_memory = True,
         shuffle=False
     )
     return train_loader

@@ -71,7 +71,8 @@ class OutConv(nn.Module):
 
     def forward(self, x):
         return self.conv(x)
-
+# n = 128
+n = 256
 class UNet(nn.Module):
     def __init__(self, n_channels, n_classes, bilinear=True):
         super(UNet, self).__init__()
@@ -81,15 +82,15 @@ class UNet(nn.Module):
 
         self.inc = DoubleConv(n_channels, 64, 3)
         # self.inc = DoubleConv(n_channels, 128, 5)
-        self.down1 = Down(64, 128)
-        self.down2 = Down(128, 128)
-        self.down3 = Down(128, 128)
+        self.down1 = Down(64, n)
+        self.down2 = Down(n, n)
+        self.down3 = Down(n, n)
         factor = 2 if bilinear else 1
-        self.down4 = Down(128, 128 // factor)
-        self.up1 = Up(192, 128, bilinear)
-        self.up2 = Up(192, 128, bilinear)
-        self.up3 = Up(192, 128, bilinear)
-        self.up4 = Up(128, 64 * factor, bilinear)
+        self.down4 = Down(n, n // factor)
+        self.up1 = Up((3*n)//2, n, bilinear)
+        self.up2 = Up((3*n)//2, n, bilinear)
+        self.up3 = Up((3*n)//2, n, bilinear)
+        self.up4 = Up(n, 64 * factor, bilinear)
         self.outc = OutConv(64, n_classes)
 
     def forward(self, x):
@@ -105,4 +106,8 @@ class UNet(nn.Module):
         logits = self.outc(x)
         return logits
 
-        
+
+
+if __name__ == "__main__":
+    from torchsummary import summary
+    summary(UNet(3, 1).to('cuda:0'), (3, 150, 200))
