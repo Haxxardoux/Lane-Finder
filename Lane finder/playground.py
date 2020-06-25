@@ -18,7 +18,30 @@ test1 = 10*torch.ones(3, 5)+torch.rand(3, 5)
 
 test2 = 11*torch.ones(3, 5)+torch.rand(3, 5)
 
-doikt = {'Thing':1, 'Thing2':2}
-for key, value in doikt.items():
-    print('its dat boi! ', key)
-    print('my neck ', value)
+
+latent_tensor = torch.zeros(5,100)
+latent_vector = torch.ones(1, 100)
+
+for i in range(5):
+    latent_vector = latent_vector*2
+    latent_tensor = torch.cat( (latent_tensor[1:], latent_vector), dim=0)
+    print(latent_tensor[-2:])
+# path = 'C:\\Users\\turbo\\Python projects\\Lane finder\\data\\videos\\test'
+
+import os
+import cv2
+
+# path_list = []
+# for (dirpath, _, filenames) in os.walk(path):
+#     for filename in filenames:
+#         path_list.append(os.path.abspath(os.path.join(path, filename)))
+
+# for filename in path_list:
+#     vcap = cv2.VideoCapture(filename)
+#     if vcap.isOpened():
+#         # get vcap property
+#         width = int(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
+#         height = int(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+#         print(width)
+#         print(height)
+

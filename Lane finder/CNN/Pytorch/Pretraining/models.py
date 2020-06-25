@@ -2,17 +2,19 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
-class DoubleConv(nn.Sequential):
+class DoubleConv(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
     def __init__(self, in_channels, out_channels, kernel_size = 3):
-        super().__init__(
-            nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(),
-            nn.Conv2d(out_channels, out_channels, kernel_size, padding=(kernel_size-1)//2),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU()
-        )
+        super().__init__()
+        self.residualBlock = nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2),
+        nn.BatchNorm2d(out_channels),
+        nn.ReLU(),
+        nn.Conv2d(out_channels, out_channels, kernel_size, padding=(kernel_size-1)//2),
+        nn.BatchNorm2d(out_channels))
+
+    def forward(self, x):
+        return nn.ReLU()(self.residualBlock(x) + x)
 
 class Down(nn.Sequential):
     def __init__(self, in_channels, out_channels):
@@ -24,8 +26,8 @@ class Backbone(nn.Module):
     def __init__(self, n=64):
         super().__init__()
         self.n = n
-
-        self.C1 = DoubleConv(3, self.n)
+        self.start = nn.Conv2d(3, self.n, kernel_size=3, padding=1)
+        self.C1 = DoubleConv(self.n, self.n)
         self.C2 = DoubleConv(self.n, self.n)
         self.C3 = DoubleConv(self.n, self.n)
         self.down1 = Down(self.n, self.n)
@@ -52,11 +54,12 @@ class Backbone(nn.Module):
         # flatten op
         self.L1 = nn.Linear(2048, n*2)
         self.L2 = nn.Linear(n*2, n*2)        
-        self.L3 = nn.Linear(n*2, n)
+        self.L3 = nn.Linear(n*2, n*2)
         self.r = nn.ReLU()
 
 
     def forward(self, x):
+        x = self.start(x)
         x = self.C1(x)
         x = self.C2(x)
         x = self.C3(x)
