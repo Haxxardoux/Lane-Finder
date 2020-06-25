@@ -13,4 +13,4 @@ __C.batch_size = 16
 
 __C.lr = 0.001
 
-__C.epochs = 2
+__C.epochs = 1
