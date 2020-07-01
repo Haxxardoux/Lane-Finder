@@ -49,5 +49,3 @@ class ConstrastiveLoss(nn.Module):
         print('Batch Loss: ', batch_loss.item())
         return batch_loss
 
-
-
