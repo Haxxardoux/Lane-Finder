@@ -1,0 +1,3 @@
+[submodule "Lane"]
+	path = Lane
+	url = https://github.com/Haxxardoux/Lane-finder-mini.git
